@@ -1,10 +1,10 @@
 package com.kardi.test.querydsl;
 
-import com.kardi.test.querydsl.entities.QRoom;
-import com.kardi.test.querydsl.entities.QTicket;
-import com.kardi.test.querydsl.entities.Room;
-import com.kardi.test.querydsl.entities.Ticket;
+import com.kardi.test.querydsl.dtos.RoomDto;
+import com.kardi.test.querydsl.entities.*;
+import com.querydsl.core.types.Projections;
 import com.querydsl.sql.MySQLTemplates;
+import com.querydsl.sql.SQLExpressions;
 import com.querydsl.sql.SQLQuery;
 import com.querydsl.sql.SQLTemplates;
 import org.junit.After;
@@ -44,13 +44,29 @@ public class QueryCombinationsTest {
     }
 
     @Test
-    public void testSimpleQuery() {
+    public void testSimpleQueryWithTupleMapping() {
         QRoom room = QRoom.room;
 
         SQLQuery<Room> query = getQuery();
-        List list = query.select(room.id, room.name).from(room).fetch();
+        List list = query
+                .select(room.id, room.name)
+                .from(room)
+                .fetch();
 
-        logger.debug("testSimpleQuery: " + list.size());
+        logger.debug("testSimpleQueryWithTupleMapping: " + list.size());
+    }
+
+    @Test
+    public void testSimpleQueryWithDtoMapping() {
+        QRoom room = QRoom.room;
+
+        SQLQuery<Room> query = getQuery();
+        List<RoomDto> list = query
+                .select(Projections.bean(RoomDto.class, room.id, room.name))
+                .from(room)
+                .fetch();
+
+        logger.debug("testSimpleQueryWithDtoMapping: " + list.size());
     }
 
     @Test
@@ -62,27 +78,49 @@ public class QueryCombinationsTest {
         List list = query
                 .select(room.id, room.name, ticket.id)
                 .from(room)
-                .leftJoin(ticket).on(room.name.eq(ticket.roomName))
+                .leftJoin(ticket).on(room.name.eq(ticket.roomname))
                 .fetch();
 
         logger.debug("testLeftJoin: " + list.size());
     }
 
     @Test
-    public void testHaving() {
+    public void testHavingWithConstructorMapping() {
         QRoom room = QRoom.room;
         QTicket ticket = QTicket.ticket;
 
         SQLQuery<Ticket> query = getQuery();
         List list = query
-                .select(room.id, room.name, ticket.id.countDistinct())
+                .select(Projections.constructor(RoomDto.class, room.id, room.name, ticket.id.countDistinct()))
                 .from(ticket)
-                .rightJoin(room).on(room.name.eq(ticket.roomName))
+                .rightJoin(room).on(room.name.eq(ticket.roomname))
                 .groupBy(room.id)
                 .having(ticket.id.countDistinct().gt(0))
                 .fetch();
 
-        logger.debug("testHaving: " + list.size());
+        logger.debug("testHavingWithConstructorMapping: " + list.size());
+    }
+
+    @Test
+    public void testSelectInWhereClause() {
+        QClient client = QClient.client;
+        QNote note = QNote.note;
+        QNote noteSub = new QNote("subnote");
+
+        SQLQuery<Client> query = getQuery();
+        List list = query
+                .select(client.id, client.name, note.id, note.message)
+                .from(client)
+                .leftJoin(note).on(note.clientId.eq(client.id))
+                .where(note.id.eq(
+                        SQLExpressions
+                                .select(noteSub.id.max())
+                                .from(noteSub)
+                                .where(noteSub.clientId.eq(client.id))
+                ))
+                .fetch();
+
+        logger.debug("testSelectInWhereClause: " + list.size());
     }
 
     private <T> SQLQuery<T> getQuery() {
